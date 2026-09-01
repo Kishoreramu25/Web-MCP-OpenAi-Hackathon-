@@ -1,5 +1,5 @@
 """
-Google Form Auto-Filler Backend - PRODUCTION READY
+Google Form Auto-Filler Backend - PRODUCTION HARDENED
 WebMCP Challenge 2026
 Author: Kishore Ramu (Kix)
 """
@@ -12,12 +12,13 @@ from functools import wraps
 from dotenv import load_dotenv
 import os
 import json
+import base64
 from datetime import datetime
 import google.generativeai as genai
 from jsonschema import validate, ValidationError
 from src.mcp.form_tools import FormAnalyzer, FormFiller, FormSubmitter
 from src.utils.logger import setup_logger
-from src.utils.validators import validate_form_url, validate_form_data
+from src.utils.validators import validate_form_url, validate_form_data, encode_responses_for_model, extract_json_from_text
 
 # Load environment
 load_dotenv()
@@ -35,7 +36,7 @@ if DEBUG and FLASK_ENV == 'production':
 # ============= SECURITY: Require API keys in production =============
 API_KEYS_STR = os.getenv('API_KEYS', '')
 if FLASK_ENV == 'production' and not API_KEYS_STR:
-    raise ValueError("❌ FATAL: API_KEYS required in production. Set non-empty API_KEYS env var.")
+    raise ValueError("❌ FATAL: API_KEYS required in production")
 
 SECRET_API_KEYS = [k.strip() for k in API_KEYS_STR.split(',') if k.strip()]
 if not SECRET_API_KEYS:
@@ -48,16 +49,16 @@ if FLASK_ENV == 'production' and not ALLOWED_ORIGINS_STR:
 
 ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_STR.split(',') if o.strip()]
 if not ALLOWED_ORIGINS:
-    ALLOWED_ORIGINS = ['http://localhost:5173']  # Safe dev only
+    ALLOWED_ORIGINS = ['http://localhost:5173']
 
 CORS(app, 
      origins=ALLOWED_ORIGINS, 
-     supports_credentials=False,  # Disabled by default for security
+     supports_credentials=False,
      allow_headers=['Content-Type', 'X-API-Key'])
 
 # ============= SECURITY: Per-API-Key Rate Limiting =============
 def limiter_key():
-    """Rate limit by API key (if present) or IP"""
+    """Rate limit by API key or IP"""
     api_key = request.headers.get('X-API-Key', '').strip()
     return api_key if api_key else get_remote_address()
 
@@ -72,10 +73,11 @@ limiter = Limiter(
 # Setup logging
 logger = setup_logger(__name__)
 
-# ============= SECURITY: JSON Schema for model output validation =============
+# ============= SECURITY: JSON Schemas for validation =============
 FORM_ANALYSIS_SCHEMA = {
     "type": "object",
     "required": ["formId", "title", "fields"],
+    "additionalProperties": False,
     "properties": {
         "formId": {"type": "string", "maxLength": 100},
         "title": {"type": "string", "maxLength": 500},
@@ -86,6 +88,7 @@ FORM_ANALYSIS_SCHEMA = {
             "items": {
                 "type": "object",
                 "required": ["id", "label", "type"],
+                "additionalProperties": False,
                 "properties": {
                     "id": {"type": "string", "maxLength": 100},
                     "label": {"type": "string", "maxLength": 1000},
@@ -101,22 +104,25 @@ FORM_ANALYSIS_SCHEMA = {
 FILLING_STRATEGY_SCHEMA = {
     "type": "object",
     "required": ["steps", "validation"],
+    "additionalProperties": False,
     "properties": {
         "steps": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": ["action", "fieldId"],
+                "additionalProperties": False,
                 "properties": {
                     "action": {"type": "string", "enum": ["fill", "select", "check", "submit"]},
                     "fieldId": {"type": "string", "maxLength": 100},
-                    "value": {"type": "string", "maxLength": 5000}
+                    "value": {"type": ["string", "null"], "maxLength": 5000}
                 }
             }
         },
         "validation": {
             "type": "object",
             "required": ["allFieldsFilled"],
+            "additionalProperties": False,
             "properties": {
                 "allFieldsFilled": {"type": "boolean"},
                 "requiredFieldsMissing": {"type": "array"}
@@ -137,7 +143,7 @@ def require_api_key(f):
             return jsonify({'error': 'Missing X-API-Key header', 'code': 'AUTH_001'}), 401
         
         if api_key not in SECRET_API_KEYS:
-            logger.warning(f"❌ Invalid API key from {get_remote_address()}")
+            logger.warning(f"❌ Invalid API key attempt from {get_remote_address()}")
             return jsonify({'error': 'Invalid API key', 'code': 'AUTH_002'}), 403
         
         return f(*args, **kwargs)
@@ -209,31 +215,35 @@ def analyze_form():
         
         model = genai.GenerativeModel('gemini-pro')
         
-        prompt = f"""Analyze this Google Form and return ONLY valid JSON (no markdown):
+        prompt = f"""Analyze this Google Form and return ONLY valid JSON (no markdown, no code fences, no comments):
 Form: {safe_url}
 
-Return:
-{{"formId":"id","title":"title","description":"desc","fields":[{{"id":"f1","label":"Question?","type":"text","required":false,"options":[]}}]}}"""
+Return compact JSON:
+{{"formId":"id","title":"title","description":"","fields":[{{"id":"f1","label":"Q?","type":"text","required":false,"options":[]}}]}}"""
         
         response = model.generate_content(prompt)
         
-        # ============= SECURITY: Safe JSON parsing + Schema validation =============
+        # ============= SECURITY: Robust JSON extraction =============
         resp_text = response.text.strip()
-        if not resp_text.startswith('{') or not resp_text.endswith('}'):
-            logger.error("❌ Invalid model JSON")
+        
+        # Extract JSON even if wrapped in code fences or comments
+        resp_text = extract_json_from_text(resp_text)
+        
+        if not resp_text or not resp_text.startswith('{') or not resp_text.endswith('}'):
+            logger.error("❌ Could not extract valid JSON")
             return jsonify({'error': 'Failed to parse form', 'code': 'PARSE_002'}), 500
         
         try:
             form_data = json.loads(resp_text)
-        except json.JSONDecodeError:
-            logger.error("❌ JSON decode failed")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode: {str(e)[:100]}")
             return jsonify({'error': 'Invalid JSON', 'code': 'PARSE_003'}), 500
         
         # ============= SECURITY: Validate against schema =============
         try:
             validate(instance=form_data, schema=FORM_ANALYSIS_SCHEMA)
         except ValidationError as e:
-            logger.error(f"❌ Schema validation failed: {str(e)}")
+            logger.error(f"❌ Schema validation: {str(e)[:100]}")
             return jsonify({'error': 'Invalid form structure', 'code': 'SCHEMA_001'}), 400
         
         logger.info(f"✓ Form OK: {len(form_data.get('fields', []))} fields")
@@ -276,38 +286,48 @@ def fill_form():
         
         logger.info(f"✓ Filling: {form_url[:50]}...")
         
-        # Sanitize for model
+        # ============= SECURITY: Safe encoding for model =============
         safe_url = form_url.replace('<', '').replace('>', '').replace('"', '')
-        safe_responses = json.dumps(responses)[:5000]
+        
+        try:
+            # Encode responses as base64 to avoid truncation/injection
+            encoded_responses = encode_responses_for_model(responses)
+        except ValueError as e:
+            logger.error(f"❌ Encoding failed: {str(e)}")
+            return jsonify({'error': 'Failed to process responses', 'code': 'ENCODE_001'}), 400
         
         model = genai.GenerativeModel('gemini-pro')
         
-        prompt = f"""Create filling strategy for Google Form. Return ONLY JSON:
+        prompt = f"""Create filling strategy for Google Form. Return ONLY valid JSON (no code fences, no comments):
 Form: {safe_url}
-Responses: {safe_responses}
+Responses (base64): {encoded_responses}
 
-Return:
+Decode the base64 responses and create a filling strategy.
+
+Return compact JSON:
 {{"steps":[{{"action":"fill","fieldId":"f1","value":"answer"}}],"validation":{{"allFieldsFilled":true,"requiredFieldsMissing":[]}}}}"""
         
         response = model.generate_content(prompt)
         
-        # ============= SECURITY: Safe parse + schema validation =============
+        # ============= SECURITY: Robust JSON extraction =============
         resp_text = response.text.strip()
-        if not resp_text.startswith('{') or not resp_text.endswith('}'):
-            logger.error("❌ Invalid JSON")
+        resp_text = extract_json_from_text(resp_text)
+        
+        if not resp_text or not resp_text.startswith('{') or not resp_text.endswith('}'):
+            logger.error("❌ Could not extract JSON")
             return jsonify({'error': 'Invalid response', 'code': 'PARSE_004'}), 500
         
         try:
             filling_strategy = json.loads(resp_text)
-        except json.JSONDecodeError:
-            logger.error("❌ JSON fail")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode: {str(e)[:100]}")
             return jsonify({'error': 'Parse error', 'code': 'PARSE_005'}), 500
         
         # ============= SECURITY: Validate schema =============
         try:
             validate(instance=filling_strategy, schema=FILLING_STRATEGY_SCHEMA)
         except ValidationError as e:
-            logger.error(f"❌ Schema fail: {str(e)}")
+            logger.error(f"❌ Schema: {str(e)[:100]}")
             return jsonify({'error': 'Invalid strategy', 'code': 'SCHEMA_002'}), 400
         
         submission_id = f"sub_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
@@ -350,7 +370,7 @@ def get_submissions():
         total = len(submissions_history)
         results = submissions_history[offset:offset+limit]
         
-        logger.info(f"✓ Fetched {len(results)} submissions")
+        logger.info(f"✓ Fetched {len(results)}")
         
         return jsonify({
             'success': True,
