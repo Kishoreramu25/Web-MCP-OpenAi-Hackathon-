@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Google Form Auto-Filler",
+  "version": "1.0",
+  "description": "AI-powered Google Form automation with WebMCP",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://docs.google.com/*",
+    "https://forms.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Google Form Auto-Filler"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/forms/*", "https://forms.google.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}

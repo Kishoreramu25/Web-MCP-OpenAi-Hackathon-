@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 450px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+    .container {
+      padding: 20px;
+      color: white;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      margin-bottom: 5px;
+    }
+    .header p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    .section h2 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+      color: #667eea;
+    }
+    .form-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: 'Monaco', monospace;
+      font-size: 0.8rem;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.3s;
+    }
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #5568d3;
+    }
+    .btn-success {
+      background: #48bb78;
+      color: white;
+    }
+    .btn-success:hover {
+      background: #38a169;
+    }
+    .btn-secondary {
+      background: #cbd5e0;
+      color: #2d3748;
+    }
+    .btn-secondary:hover {
+      background: #a0aec0;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 10px;
+    }
+    .status.success {
+      background: #f0fdf4;
+      color: #22863a;
+      border: 1px solid #48bb78;
+    }
+    .status.error {
+      background: #fff5f5;
+      color: #742a2a;
+      border: 1px solid #f56565;
+    }
+    .status.info {
+      background: #eff6ff;
+      color: #003da5;
+      border: 1px solid #667eea;
+    }
+    .memory-list {
+      max-height: 150px;
+      overflow-y: auto;
+      background: #f5f5f5;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 0.8rem;
+    }
+    .memory-item {
+      padding: 5px;
+      margin-bottom: 5px;
+      background: white;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .memory-item button {
+      padding: 3px 8px;
+      font-size: 0.75rem;
+    }
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 10px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 Auto-Fill</h1>
+      <p>AI-powered form automation</p>
+    </div>
+
+    <div id="status"></div>
+
+    <div class="section">
+      <h2>📝 Saved Info (Local Memory)</h2>
+      <div class="form-group">
+        <label>Name:</label>
+        <input type="text" id="name" placeholder="Your name">
+      </div>
+      <div class="form-group">
+        <label>Email:</label>
+        <input type="email" id="email" placeholder="your@email.com">
+      </div>
+      <div class="form-group">
+        <label>Phone:</label>
+        <input type="tel" id="phone" placeholder="Phone number">
+      </div>
+      <button class="btn-secondary" onclick="saveMemory()" style="width: 100%;">💾 Save to Memory</button>
+    </div>
+
+    <div class="section">
+      <h2>🔧 API Config</h2>
+      <div class="form-group">
+        <label>API URL:</label>
+        <input type="text" id="apiUrl" placeholder="http://localhost:3000">
+      </div>
+      <div class="form-group">
+        <label>API Key:</label>
+        <input type="password" id="apiKey" placeholder="your-api-key">
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>⚙️ Actions</h2>
+      <div class="btn-group">
+        <button class="btn-primary" onclick="analyzeForm()">🔍 Analyze</button>
+        <button class="btn-success" onclick="autoFill()">✨ Auto-Fill</button>
+      </div>
+      <div class="btn-group" style="margin-top: 10px;">
+        <button class="btn-secondary" onclick="clearMemory()">🗑️ Clear</button>
+        <button class="btn-secondary" onclick="viewMemory()">📋 View</button>
+      </div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Processing...</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
