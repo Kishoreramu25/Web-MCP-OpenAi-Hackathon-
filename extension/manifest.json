@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Google Form Auto-Filler",
-  "version": "1.0",
-  "description": "AI-powered Google Form automation with WebMCP",
+  "name": "Google Form Auto-Filler & AI Submitter",
+  "version": "2.0",
+  "description": "Inspects Google Forms HTML, AI matches fields, injects directly into DOM, and auto-submits.",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,7 +11,10 @@
   ],
   "host_permissions": [
     "https://docs.google.com/*",
-    "https://forms.google.com/*"
+    "https://forms.google.com/*",
+    "https://forms.gle/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -22,8 +25,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://docs.google.com/forms/*", "https://forms.google.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://docs.google.com/forms/*",
+        "https://forms.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }

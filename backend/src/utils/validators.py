@@ -8,23 +8,23 @@ from typing import Dict, Any
 
 
 def validate_form_url(url: str) -> bool:
-    """Validate real Google Forms URL - STRICT pattern"""
-    # Correct Google Forms URL: https://docs.google.com/forms/d/[ID]/...
-    # Also accept: https://forms.google.com/forms/d/[ID]/...
-    pattern = r'^https://(docs\.)?google\.com/forms/d/[a-zA-Z0-9_-]{20,}(?:/.*)?$'
-    
-    if not re.match(pattern, url):
+    """Validate real Google Forms URL"""
+    if not isinstance(url, str):
+        return False
+    url = url.strip()
+    if not url or len(url) > 500:
         return False
     
-    # SSRF prevention - only google.com
-    if 'google.com' not in url or '/forms/d/' not in url:
-        return False
+    # 1. Short links: https://forms.gle/XXXX
+    if re.match(r'^https?://forms\.gle/[a-zA-Z0-9_-]+', url, re.IGNORECASE):
+        return True
     
-    # Length check
-    if len(url) > 500:
-        return False
+    # 2. Standard Google Forms: docs.google.com/forms/d/... or forms.google.com/forms/d/...
+    # Supports /d/e/[ID]..., /d/[ID]..., /u/0/d/e/[ID]...
+    if re.match(r'^https?://(docs\.|forms\.)?google\.com/forms/(?:u/\d+/)?d/(?:e/)?[a-zA-Z0-9_-]+', url, re.IGNORECASE):
+        return True
     
-    return True
+    return False
 
 
 def validate_email(email: str) -> bool:

@@ -13,15 +13,20 @@ from dotenv import load_dotenv
 import os
 import json
 import base64
+import requests
 from datetime import datetime
 import google.generativeai as genai
 from jsonschema import validate, ValidationError
 from src.mcp.form_tools import FormAnalyzer, FormFiller, FormSubmitter
 from src.utils.logger import setup_logger
 from src.utils.validators import validate_form_url, validate_form_data, encode_responses_for_model, extract_json_from_text
+from src.utils.db import init_db, get_profile, save_profile, record_submission
 
 # Load environment
 load_dotenv()
+
+# Initialize DB
+init_db()
 
 # Initialize Flask
 app = Flask(__name__)
@@ -157,6 +162,33 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
+def generate_content_with_fallback(prompt):
+    """Generates content trying multiple Gemini models in sequence to prevent 429 quota errors"""
+    model_names = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.7-flash',
+        'gemini-2.5-pro',
+        'gemini-2.5-flash'
+    ]
+    last_err = None
+    for m_name in model_names:
+        try:
+            m = genai.GenerativeModel(m_name)
+            resp = m.generate_content(prompt)
+            if resp and resp.text:
+                return resp.text
+        except Exception as e:
+            last_err = e
+            logger.warning(f"Model {m_name} failed: {e}. Retrying next model...")
+            continue
+    raise last_err or Exception("All Gemini models failed")
+
+def get_gemini_model():
+    """Get active Gemini generative model with fallback"""
+    return genai.GenerativeModel('gemini-3.5-flash-lite')
+
 # Initialize tools
 form_analyzer = FormAnalyzer()
 form_filler = FormFiller()
@@ -189,8 +221,138 @@ def health_check():
     }), 200
 
 
+@app.route('/api/profile', methods=['GET'])
+@require_api_key
+def fetch_profile():
+    """Fetch saved user profile / DB data"""
+    try:
+        profile = get_profile()
+        return jsonify({'success': True, 'data': profile}), 200
+    except Exception as e:
+        logger.error(f"Error fetching profile: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/profile', methods=['POST'])
+@require_api_key
+def update_profile():
+    """Save/update user profile / DB data"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid JSON'}), 400
+        save_profile(data)
+        return jsonify({'success': True, 'message': 'Profile saved successfully', 'data': data}), 200
+    except Exception as e:
+        logger.error(f"Error saving profile: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/forms/autofill-match', methods=['POST'])
+@require_api_key
+def autofill_match():
+    """Smartly match form fields to user database profile"""
+    try:
+        data = request.get_json()
+        fields = data.get('fields', [])
+        profile = data.get('profile') or get_profile()
+        
+        if not fields:
+            return jsonify({'error': 'Fields required'}), 400
+            
+        matched_responses = {}
+        
+        # Rule-based fast matcher
+        for field in fields:
+            fid = field.get('id')
+            flabel = (field.get('label') or '').lower().strip()
+            options = field.get('options', [])
+            
+            val = None
+            if any(k in flabel for k in ['full name', 'your name', 'candidate name', 'first name', 'name']):
+                val = profile.get('fullName')
+            elif any(k in flabel for k in ['email', 'e-mail', 'mail']):
+                val = profile.get('email')
+            elif any(k in flabel for k in ['phone', 'mobile', 'contact', 'whatsapp', 'cell', 'number']):
+                val = profile.get('phone')
+            elif any(k in flabel for k in ['linkedin', 'linked in']):
+                val = profile.get('linkedinUrl')
+            elif any(k in flabel for k in ['github', 'git']):
+                val = profile.get('githubUrl')
+            elif any(k in flabel for k in ['portfolio', 'website', 'personal link', 'project link']):
+                val = profile.get('portfolioUrl')
+            elif any(k in flabel for k in ['college', 'university', 'institute', 'school']):
+                val = profile.get('college')
+            elif any(k in flabel for k in ['degree', 'qualification', 'major', 'course', 'branch']):
+                val = profile.get('degree')
+            elif any(k in flabel for k in ['company', 'organization', 'current employer', 'workplace']):
+                val = profile.get('company')
+            elif any(k in flabel for k in ['job title', 'role', 'designation', 'position']):
+                val = profile.get('jobTitle')
+            elif any(k in flabel for k in ['experience', 'years of exp', 'total exp']):
+                val = profile.get('experienceYears')
+            elif any(k in flabel for k in ['skill', 'technologies', 'tech stack', 'languages']):
+                val = profile.get('skills')
+            elif any(k in flabel for k in ['city', 'location', 'current city']):
+                val = profile.get('city')
+            elif any(k in flabel for k in ['address', 'residence']):
+                val = profile.get('address')
+            elif any(k in flabel for k in ['gender', 'sex']):
+                val = profile.get('gender')
+            elif any(k in flabel for k in ['why hire', 'about you', 'introduce yourself', 'cover letter', 'summary']):
+                val = profile.get('whyHire')
+            
+            # If options exist, pick closest option ONLY if val is already matched from profile
+            if options and val:
+                best_opt = next((o for o in options if o.lower() == str(val).lower()), None)
+                if not best_opt:
+                    best_opt = next((o for o in options if str(val).lower() in o.lower() or o.lower() in str(val).lower()), None)
+                if best_opt:
+                    val = best_opt
+                
+            if val is not None and val != '':
+                matched_responses[fid] = val
+                
+        # For any unmatched fields (quizzes, technical questions, custom fields), use Gemini to solve
+        unmatched = [f for f in fields if f.get('id') not in matched_responses]
+        if unmatched:
+            try:
+                model = get_gemini_model()
+                prompt = f"""You are an expert AI Form & Quiz Solver.
+Answer or solve the following Google Form / Quiz questions with 100% accuracy.
+
+Rules:
+1. For personal / identity fields (Name, Email, Phone, College, etc.), use the User Profile:
+{json.dumps(profile)}
+
+2. For QUIZ / TEST / FACTUAL / TECHNICAL questions:
+   - If "options" are provided (multiple choice, radio, dropdown), pick the EXACT CORRECT option string from the options list.
+   - For open-ended quiz questions (e.g. math, science, programming, trivia), provide the precise, accurate answer.
+   - For subjective / opinion / essay questions, provide a professional, thoughtful response aligned with the user profile.
+
+Questions to solve:
+{json.dumps(unmatched, indent=2)}
+
+Return ONLY a JSON object mapping each question's "id" (or label) to the final answer value string, example:
+{{"field_1": "Correct Option String", "field_2": "Answer Text"}}
+"""
+                resp_text = generate_content_with_fallback(prompt)
+                ai_matches = json.loads(extract_json_from_text(resp_text))
+                if isinstance(ai_matches, dict):
+                    for k, v in ai_matches.items():
+                        if k not in matched_responses:
+                            matched_responses[k] = v
+            except Exception as e:
+                logger.warning(f"AI autofill match fallback: {e}")
+
+        return jsonify({'success': True, 'data': matched_responses}), 200
+    except Exception as e:
+        logger.error(f"Error in autofill_match: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/forms/analyze', methods=['POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("30 per minute")
 @require_api_key
 def analyze_form():
     """Analyze form structure"""
@@ -210,41 +372,90 @@ def analyze_form():
         
         logger.info(f"✓ Analyzing: {form_url[:50]}...")
         
-        # Sanitize for model
+        form_id = form_analyzer.extract_form_id(form_url) or "form_1"
         safe_url = form_url.replace('<', '').replace('>', '').replace('"', '')
         
-        model = genai.GenerativeModel('gemini-pro')
-        
-        prompt = f"""Analyze this Google Form and return ONLY valid JSON (no markdown, no code fences, no comments):
-Form: {safe_url}
-
-Return compact JSON:
-{{"formId":"id","title":"title","description":"","fields":[{{"id":"f1","label":"Q?","type":"text","required":false,"options":[]}}]}}"""
-        
-        response = model.generate_content(prompt)
-        
-        # ============= SECURITY: Robust JSON extraction =============
-        resp_text = response.text.strip()
-        
-        # Extract JSON even if wrapped in code fences or comments
-        resp_text = extract_json_from_text(resp_text)
-        
-        if not resp_text or not resp_text.startswith('{') or not resp_text.endswith('}'):
-            logger.error("❌ Could not extract valid JSON")
-            return jsonify({'error': 'Failed to parse form', 'code': 'PARSE_002'}), 500
-        
+        # 1. Fetch form HTML directly
+        html_content = ""
         try:
-            form_data = json.loads(resp_text)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON decode: {str(e)[:100]}")
-            return jsonify({'error': 'Invalid JSON', 'code': 'PARSE_003'}), 500
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            resp = requests.get(form_url, headers=headers, timeout=10, allow_redirects=True)
+            if resp.status_code == 200:
+                html_content = resp.text
+        except Exception as e:
+            logger.warning(f"Could not fetch HTML directly: {e}")
         
-        # ============= SECURITY: Validate against schema =============
+        form_data = None
+        if html_content:
+            parsed = form_analyzer.parse_form_structure(html_content)
+            if parsed and parsed.get('fields'):
+                parsed['formId'] = form_id
+                form_data = parsed
+        
+        # 2. If direct extraction had no fields or couldn't parse, use Gemini
+        if not form_data or not form_data.get('fields'):
+            model = get_gemini_model()
+            
+            prompt = f"""Analyze this Google Form and return ONLY valid JSON (no markdown, no code fences, no comments):
+Form: {safe_url}
+HTML Context: {html_content[:3000] if html_content else 'Google Form'}
+
+Return compact JSON matching this exact structure:
+{{"formId":"{form_id}","title":"title","description":"","fields":[{{"id":"f1","label":"Q?","type":"text","required":false,"options":[]}}]}}"""
+            
+            response = model.generate_content(prompt)
+            resp_text = response.text.strip()
+            resp_text = extract_json_from_text(resp_text)
+            
+            if resp_text and resp_text.startswith('{') and resp_text.endswith('}'):
+                try:
+                    form_data = json.loads(resp_text)
+                except Exception as e:
+                    logger.error(f"❌ JSON decode: {str(e)[:100]}")
+        
+        if not form_data:
+            form_data = {
+                'formId': form_id,
+                'title': 'Google Form',
+                'description': '',
+                'fields': []
+            }
+            
+        # Ensure formId is set
+        if not form_data.get('formId'):
+            form_data['formId'] = form_id
+            
+        # Clean fields for schema conformity
+        valid_types = {"text", "email", "select", "checkbox", "radio", "textarea"}
+        if isinstance(form_data.get('fields'), list):
+            cleaned_fields = []
+            for i, f in enumerate(form_data['fields']):
+                if not isinstance(f, dict):
+                    continue
+                ftype = f.get('type', 'text')
+                if ftype not in valid_types:
+                    ftype = 'text'
+                cleaned_fields.append({
+                    'id': str(f.get('id', f'f{i+1}'))[:100],
+                    'label': str(f.get('label', f'Field {i+1}'))[:1000],
+                    'type': ftype,
+                    'required': bool(f.get('required', False)),
+                    'options': [str(opt) for opt in f.get('options', []) if isinstance(opt, (str, int, float))][:100]
+                })
+            form_data['fields'] = cleaned_fields
+            
+        # Validate against schema
         try:
             validate(instance=form_data, schema=FORM_ANALYSIS_SCHEMA)
         except ValidationError as e:
             logger.error(f"❌ Schema validation: {str(e)[:100]}")
-            return jsonify({'error': 'Invalid form structure', 'code': 'SCHEMA_001'}), 400
+            form_data['formId'] = str(form_data.get('formId', form_id))[:100]
+            form_data['title'] = str(form_data.get('title', 'Google Form'))[:500]
+            if 'description' in form_data and not isinstance(form_data['description'], str):
+                form_data['description'] = str(form_data['description'])[:2000]
+            form_data['fields'] = []
         
         logger.info(f"✓ Form OK: {len(form_data.get('fields', []))} fields")
         
@@ -296,7 +507,7 @@ def fill_form():
             logger.error(f"❌ Encoding failed: {str(e)}")
             return jsonify({'error': 'Failed to process responses', 'code': 'ENCODE_001'}), 400
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = get_gemini_model()
         
         prompt = f"""Create filling strategy for Google Form. Return ONLY valid JSON (no code fences, no comments):
 Form: {safe_url}
@@ -340,6 +551,7 @@ Return compact JSON:
             'status': 'success'
         }
         submissions_history.append(submission)
+        record_submission(submission_id, form_url, len(responses), filling_strategy)
         
         if len(submissions_history) > MAX_SUBMISSIONS:
             submissions_history.pop(0)

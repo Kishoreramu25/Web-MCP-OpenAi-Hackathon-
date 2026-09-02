@@ -1,68 +1,38 @@
-# Google Form Auto-Filler - Browser Extension
+# 🤖 Google Form Auto-Filler & AI Submitter — Chrome Extension
 
-**Chrome/Edge extension for AI-powered Google Form automation**
+> **100% Standalone Popup Automation** — Inspects Google Form DOM elements, AI-matches questions with your DB profile, injects values directly into form fields, and auto-submits.
 
-## Features
+---
 
-✨ **Local Memory Storage**
-- Save name, email, phone locally
-- Autofill remembered info
+## ⚡ How It Works (Pure Popup Flow)
 
-🤖 **AI Auto-Fill**
-- Analyze form fields
-- Fill general questions with Gemini AI
-- Submit with one click
+1. **Open any Google Form** in Chrome (e.g. `docs.google.com/forms/d/e/.../viewform`).
+2. **Click the Extension icon** in Chrome's toolbar.
+3. The popup connects to the active Google Form tab:
+   - 🔍 **Inspects HTML**: Scans all questions, text inputs, textareas, radios, checkboxes, and dropdowns directly from the webpage DOM.
+   - 🧠 **AI & Profile Matching**: Maps each question to your stored personal DB profile (Name, Email, Phone, College, Company, Experience, LinkedIn, GitHub, etc.).
+   - ⚡ **Injects into DOM**: Types values into inputs, checks checkboxes, and clicks radio buttons with animated green highlights.
+   - 🚀 **Auto-Submit**: Automatically scrolls to and clicks the Google Form **Submit** button.
 
-🔌 **WebMCP Integration**
-- Connects to your backend API
-- Secure API key authentication
+---
 
-## Installation
+## 📦 How to Install the Extension in Chrome (1 Minute)
 
-### Dev Mode (Chrome/Edge)
+1. Open Google Chrome.
+2. In the URL bar, go to: `chrome://extensions`
+3. In the top-right corner, turn on **"Developer mode"** toggle.
+4. Click the **"Load unpacked"** button (top-left).
+5. Select the **`extension`** folder from this project:
+   `c:\Users\Kishore R\Downloads\Kishore Projects\webmcp\extension`
+6. Click the Extensions (puzzle piece 🧩) icon on Chrome's toolbar and **pin** "Google Form Auto-Filler".
 
-1. Open `chrome://extensions`
-2. Enable "Developer mode" (top-right)
-3. Click "Load unpacked"
-4. Select this `extension/` folder
-5. Done!
+---
 
-### Usage
+## 🚀 How to Use
 
-1. Save your personal info (name, email, phone)
-2. Set API URL & Key (if using custom backend)
-3. Open any Google Form
-4. Click extension icon in toolbar
-5. Click "Analyze" to preview form
-6. Click "Auto-Fill" to fill & submit
-
-## File Structure
-
-```
-extension/
-├── manifest.json      # Extension config
-├── popup.html         # UI popup
-├── popup.js           # Popup logic
-├── content.js         # Page injection
-├── background.js      # Service worker
-└── README.md          # This file
-```
-
-## Configuration
-
-**Default API:**
-- URL: `http://localhost:3000`
-- Key: `dev-key-12345`
-
-Change in popup settings if using custom backend.
-
-## Privacy
-
-- ✅ All data stored locally in browser
-- ✅ No tracking or analytics
-- ✅ No data sent to servers except form responses
-- ✅ Open source - audit the code
-
-## Support
-
-Issues? Email: ramkisho28@gmail.com
+1. Open the extension popup and switch to the **"👤 My DB Profile"** tab.
+2. Fill in your details (Name, Email, Phone, College, Experience, Skills, LinkedIn, etc.) and click **"💾 Save Profile"**.
+3. Navigate to any Google Form in your browser.
+4. Open the extension popup and click:
+   - **🚀 "Auto-Fill & Submit Form"** — fills everything and submits immediately.
+   - or **⚡ "Fill Fields Only"** — fills all inputs so you can inspect before clicking submit.
