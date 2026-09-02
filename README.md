@@ -28,29 +28,28 @@
 
 ## 📸 Screenshots
 
-### Screenshot 1: Extension Popup UI
-![Extension Popup](https://via.placeholder.com/400x500?text=Extension+Popup+UI)
+### Screenshot 1: Extension Popup UI & Question Detection
+![Extension Popup](screenshots/WebMcp.png)
 
 *Chrome extension popup showing:*
-- 💾 Local memory storage for name, email, phone
-- 🔧 API configuration
-- ⚙️ Action buttons (Analyze, Auto-Fill)
+- 🤖 WebMCP intelligent agent connected to Google Form
+- 💾 Local DB memory storage (Name, Email, LinkedIn, etc.)
+- 🔍 DOM inspection with 106+ questions detected & auto-matched
+- ⚙️ Action buttons (Auto-Fill & Submit, Fill Only, Scan DOM)
 
-### Screenshot 2: Form Analysis
-![Form Analysis](https://via.placeholder.com/400x500?text=Form+Analysis+Results)
+### Screenshot 2: Target Google Form (Before Auto-Fill)
+![Empty Google Form](screenshots/Emptyform.png)
 
-*Extension showing analyzed form:*
-- 🔍 Extracted form fields
-- 📋 Field types detected
-- ✅ Ready for auto-fill
+*Target Google Form before filling:*
+- 📋 Multi-section Google Form (Java Placement Quiz)
+- 📝 Empty text fields, roll number, and multiple-choice options ready for automation
 
-### Screenshot 3: Auto-Fill Success
-![Success Overlay](https://via.placeholder.com/400x500?text=Success+Overlay)
+### Screenshot 3: Auto-Filled Form
+![Auto-Filled Form](screenshots/Formfilled.png)
 
-*After auto-fill completion:*
-- ✨ Overlay showing submission confirmation
-- 📊 Submission ID & timestamp
-- 🎉 Success message
+*After auto-fill execution:*
+- ✨ Form inputs populated and multiple-choice options automatically selected
+- 🚀 Seamless one-click submission powered by Gemini AI and WebMCP
 
 ---
 
