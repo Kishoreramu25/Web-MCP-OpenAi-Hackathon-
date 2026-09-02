@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 Google Form Auto-Filler
+# 🤖 WEB-MCP OpenAI Hackathon 2026
 
 > **AI-Powered Intelligent Form Automation using WebMCP**
 
