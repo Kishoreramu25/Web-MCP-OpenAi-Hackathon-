@@ -16,6 +16,44 @@
 
 </div>
 
+## 🎬 Demo Video
+
+**Watch the extension auto-fill a Google Form in 10 seconds:**
+
+[![YouTube Video](https://img.shields.io/badge/YouTube-Full%20Demo-red?style=for-the-badge&logo=youtube)](https://youtu.be/550VR5K9SPs)
+
+[Link: https://youtu.be/550VR5K9SPs](https://youtu.be/550VR5K9SPs)
+
+---
+
+## 📸 Screenshots
+
+### Screenshot 1: Extension Popup UI
+![Extension Popup](https://via.placeholder.com/400x500?text=Extension+Popup+UI)
+
+*Chrome extension popup showing:*
+- 💾 Local memory storage for name, email, phone
+- 🔧 API configuration
+- ⚙️ Action buttons (Analyze, Auto-Fill)
+
+### Screenshot 2: Form Analysis
+![Form Analysis](https://via.placeholder.com/400x500?text=Form+Analysis+Results)
+
+*Extension showing analyzed form:*
+- 🔍 Extracted form fields
+- 📋 Field types detected
+- ✅ Ready for auto-fill
+
+### Screenshot 3: Auto-Fill Success
+![Success Overlay](https://via.placeholder.com/400x500?text=Success+Overlay)
+
+*After auto-fill completion:*
+- ✨ Overlay showing submission confirmation
+- 📊 Submission ID & timestamp
+- 🎉 Success message
+
+---
+
 ## 🎯 The Problem
 
 **Every day, millions waste hours** filling out repetitive Google Forms:
@@ -167,21 +205,6 @@ npm install
 npm run dev
 # Open http://localhost:5173
 ```
-
----
-
-## 🎥 Demo Video
-
-**Watch the extension in action:**
-
-[![YouTube Demo](https://img.shields.io/badge/YouTube-Demo%20Video-red?style=for-the-badge)](https://youtu.be/550VR5K9SPs)
-
-**What you'll see:**
-1. Open Google Form
-2. Click extension icon
-3. Form auto-analyzes
-4. Fields auto-fill
-5. Submit confirmation
 
 ---
 
